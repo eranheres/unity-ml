@@ -77,9 +77,14 @@ def docker_run(args):
 def train_remote(app_loc, config_loc):
     run_shell("gsutil -m rsync -r {} gs://{}/app".format(app_loc, BUCKET_NAME))
     run_shell("gsutil cp {} gs://{}/config.yaml".format(config_loc, BUCKET_NAME))
-    time_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    cmd = "" \
-          "gcloud ai-platform jobs submit training malgents_{} - -master - image - uri = gcr.io / testeran / mlagents:mlagents - - train_on_docker.sh".format(time_str)
+    time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_name = '{}_{}'.format('mlagents', time_str)
+    cmd = '' \
+          'gcloud ai-platform jobs submit training {} ' \
+          '--master-image-uri=gcr.io/testeran/mlagents:mlagents ' \
+          '-- {}' \
+          .format(job_name, job_name)
+    run_shell(cmd)
 
 
 def train_local(app_loc, config_loc):
