@@ -1,18 +1,22 @@
 FROM python:3.7.9
 
 RUN apt-get update
-RUN apt-get install -y xvfb
+RUN apt-get install -y xvfb curl
 RUN python -m pip install --upgrade pip
+RUN curl -sSL https://sdk.cloud.google.com | bash
 
 COPY docker_requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 RUN mkdir /mnt/pwd
-WORKDIR /mnt/pwd
+# WORKDIR /mnt/pwd
+
+COPY train_on_docker.sh train_on_docker.sh
 
 # tensorboard
 EXPOSE 6006
+ENV PATH $PATH:/root/google-cloud-sdk/bin
+RUN echo '[GoogleCompute]\nservice_account = default' > /etc/boto.cfg
 
-ENTRYPOINT ["/bin/bash"]
-# xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' mlagents-learn $(pwd)/Assets/config/rollerball_config.yaml --env=$(pwd)/builds/rollerball_linux.x86_64 --run-id=run1
+ENTRYPOINT ["/bin/bash", "train_on_docker.sh"]
 
