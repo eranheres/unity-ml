@@ -82,8 +82,8 @@ def train_remote(app_loc, config_loc):
     cmd = '' \
           'gcloud ai-platform jobs submit training {} ' \
           '--master-image-uri=gcr.io/testeran/mlagents:mlagents ' \
-          '-- {}' \
-          .format(job_name, job_name)
+          '--master-accelerator=count=1,type=nvidia-tesla-a100 ' \
+          '-- {}'.format(job_name, job_name)
     run_shell(cmd)
 
 
