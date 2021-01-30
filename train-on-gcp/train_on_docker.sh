@@ -1,5 +1,6 @@
 echo "train_on_docker input parameters:"
 echo $1
+nvidia-smi
 gsutil cp -r gs://mlagents/app /mnt/pwd/.
 gsutil cp gs://mlagents/config.yaml /mnt/pwd/.
 chmod u+x /mnt/pwd/app/rollerball_linux.x86_64
