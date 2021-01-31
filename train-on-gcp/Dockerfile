@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.2.0-base
+FROM nvidia/cuda:11.2.0-runtime
 #FROM python:3.7.9
 
 RUN apt-get update -y
