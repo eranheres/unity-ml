@@ -56,12 +56,14 @@ def attach_disk(args):
     run_shell(cmd.replace('$(INSTANCE_NAME)', args.name).replace('$(ZONE)', args.zone))
 
 
-def build_docker(args):
-    run_shell('docker build -t {} .'.format(image_uri()))
-
-
-def push_docker(args):
-    run_shell('docker push {}'.format(image_uri()))
+def docker_build_push(args):
+    location = args.location
+    if location == 'remote':
+        run_shell('gcloud builds submit --tag {} --timeout=15m'.format(image_uri()))
+    elif location == 'local':
+        run_shell('docker build -t {} .'.format(image_uri()))
+        if args.push:
+            run_shell('docker push {}'.format(image_uri()))
 
 
 def ssh(args):
@@ -74,54 +76,66 @@ def docker_run(args):
     run_shell('docker run -it -v {}/tmp:/mnt/pwd {} /bin/bash'.format(cwd, image_uri()))
 
 
-def train_remote(app_loc, config_loc):
-    run_shell("gsutil -m rsync -r {} gs://{}/app".format(app_loc, BUCKET_NAME))
-    run_shell("gsutil cp {} gs://{}/config.yaml".format(config_loc, BUCKET_NAME))
+def train_remote(args):
+    app_loc = args.app
+    config_loc = args.config
+    gcp_config = args.gcp_config
+    run_shell('gsutil -m rsync -J -r {} gs://{}/train-data/app'.format(app_loc, BUCKET_NAME))
+    run_shell("gsutil cp {} gs://{}/train-data/config.yaml".format(config_loc, BUCKET_NAME))
     time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     job_name = '{}_{}'.format('mlagents', time_str)
     cmd = '' \
           'gcloud ai-platform jobs submit training {} ' \
           '--master-image-uri=gcr.io/testeran/mlagents:mlagents ' \
-          '--master-accelerator=count=1,type=nvidia-tesla-a100 ' \
-          '-- {}'.format(job_name, job_name)
+          '{}' \
+          '-- --job={}'.format(
+                job_name,
+                "--config {} ".format(gcp_config) if gcp_config else "",
+                job_name)
     run_shell(cmd)
+    if args.tensorboard:
+        run_shell('tensorboard --logdir=gs://mlagents/results/{}'.format(job_name))
 
 
-def train_local(app_loc, config_loc):
+def train_local(args):
+    app_loc = args.app
+    config_loc = args.config
     print("training on {} with {}".format(app_loc, config_loc))
     temp_dir = 'tmp'
     shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
     shutil.copytree(app_loc, '{}/app'.format(temp_dir))
     shutil.copy(config_loc, '{}/config.yaml'.format(temp_dir))
-    run_shell("docker run -v {}/tmp:/mnt/pwd {} --parameter 1".format(os.getcwd(), image_uri()))
+    run_shell("docker run -v {}/tmp:/mnt/pwd {} --local".format(os.getcwd(), image_uri()))
 
-
-def train(args):
-    location = args.location
-    if location=='local':
-        train_local(app_loc=args.app, config_loc=args.config)
-    elif location== 'remote':
-        train_remote(app_loc=args.app, config_loc=args.config)
 
 def main():
     parser = argparse.ArgumentParser(description='train mlagents locally and remotely')
     subparsers = parser.add_subparsers()
 
     parser_build = subparsers.add_parser('docker-build', help='build docker image')
-    parser_build.set_defaults(func=build_docker)
-
-    parser_push = subparsers.add_parser('docker-push', help='push docker image')
-    parser_push.set_defaults(func=push_docker)
+    parser_build.add_argument('location', choices=['local', 'remote'], type=str, help='train locally or on GCP')
+    parser_build.add_argument('--push', action='store_true', help='Push local builds')
+    parser_build.set_defaults(func=docker_build_push)
 
     parser_run = subparsers.add_parser('docker-run', help='docker run')
     parser_run.set_defaults(func=docker_run)
 
     parser_train = subparsers.add_parser('train', help='train on image')
-    parser_train.add_argument('location', choices=['local', 'remote'], type=str, help='train locally or on GCP')
-    parser_train.add_argument('app', metavar="app-location", type=str, help='location of application')
-    parser_train.add_argument('config', metavar="config-file", type=str, help='location of config file')
-    parser_train.set_defaults(func=train)
+
+    subparsers_train = parser_train.add_subparsers()
+    parser_train_local = subparsers_train.add_parser('local', help='train on image locally')
+    parser_train_local.add_argument('--app', metavar="app-location", required=True, type=str, help='location of application')
+    parser_train_local.add_argument('--config', metavar="config-file", required=True, type=str, help='location of config file')
+    parser_train_local.set_defaults(func=train_local)
+
+    parser_train_remote = subparsers_train.add_parser('remote', help='train on image remotely')
+    parser_train_remote.add_argument('--app', metavar="app-location", required=True, type=str, help='location of application')
+    parser_train_remote.add_argument('--config', metavar="config-file", required=True, type=str, help='location of config file')
+    parser_train_remote.add_argument('--gcp-config', default="", type=str, help="hypertraining gcp config")
+    parser_train_remote.add_argument('--tensorboard', action='store_true', help="start tensorboard")
+    parser_train_remote.set_defaults(func=train_remote)
+
 
     parser_create_machine = subparsers.add_parser('create-machine', help='create a new vm instance')
     parser_create_machine.add_argument('name', type=str, help='the name of the machine')
